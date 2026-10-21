@@ -609,6 +609,7 @@ export function createSessionMcpRuntime(params: {
             agentDir: params.agentDir,
             prepareDataDir: dataDirOwnership?.dataDir,
             requesterScope: params.requesterScope,
+            sessionKey: params.sessionKey,
           });
           if (!resolved) {
             continue;
