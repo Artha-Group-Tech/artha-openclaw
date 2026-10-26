@@ -1,0 +1,182 @@
+diff --git a/src/agents/agent-bundle-mcp-runtime.ts b/src/agents/agent-bundle-mcp-runtime.ts
+index 04cde04ca16..9f62cc7b0c9 100644
+--- a/src/agents/agent-bundle-mcp-runtime.ts
++++ b/src/agents/agent-bundle-mcp-runtime.ts
+@@ -609,6 +609,7 @@ export function createSessionMcpRuntime(params: {
+             agentDir: params.agentDir,
+             prepareDataDir: dataDirOwnership?.dataDir,
+             requesterScope: params.requesterScope,
++            sessionKey: params.sessionKey,
+           });
+           if (!resolved) {
+             continue;
+diff --git a/src/agents/artha-office365-context.d.mts b/src/agents/artha-office365-context.d.mts
+new file mode 100644
+index 00000000000..986c702c62b
+--- /dev/null
++++ b/src/agents/artha-office365-context.d.mts
+@@ -0,0 +1,8 @@
++import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
++import type { SessionMcpRequesterScope } from "./agent-bundle-mcp-types.js";
++export function withArthaGatewayContext(fetchFn: FetchLike, options: {
++  auth?: string;
++  identity?: string;
++  requesterScope?: SessionMcpRequesterScope;
++  sessionKey?: string;
++}): FetchLike;
+diff --git a/src/agents/artha-office365-context.mjs b/src/agents/artha-office365-context.mjs
+new file mode 100644
+index 00000000000..53f06bc7494
+--- /dev/null
++++ b/src/agents/artha-office365-context.mjs
+@@ -0,0 +1,53 @@
++/** Trusted gateway transport extension. Never load this in an agent workspace.
++ * Installed by install-office365-transport.py into an OpenClaw source checkout.
++ */
++import { createHash, createHmac, randomUUID } from "node:crypto";
++import { readFileSync } from "node:fs";
++
++export function classifySession(sessionKey, requester) {
++  if (requester?.messageChannel !== "whatsapp" || !requester.requesterSenderId) return null;
++  // Require the canonical per-account DM route. Reject main sessions, identity
++  // aliases, nested agent sessions and unknown route grammars rather than guess.
++  const direct = /^agent:[^:]+:whatsapp:([^:]+):direct:([^:]+)$/.exec(sessionKey ?? "");
++  if (direct) {
++    const normalize = (s) => String(s).replace(/@s\.whatsapp\.net$/, "").replace(/^\+/, "");
++    if (requester.agentAccountId !== direct[1] || normalize(direct[2]) !== normalize(requester.requesterSenderId)) return null;
++    return { chat_kind: "private", conversation_id: sessionKey };
++  }
++  const group = /^agent:[^:]+:whatsapp:group:([^:]+@g\.us)$/.exec(sessionKey ?? "");
++  return group ? { chat_kind: "group", conversation_id: sessionKey } : null;
++}
++
++export function withArthaGatewayContext(fetchFn, options, dependencies = {}) {
++  const env = dependencies.env ?? process.env;
++  const target = env.ARTHA_OFFICE365_MCP_URL ?? "https://pitch.artha.vc/mcp";
++  const keyFile = env.ARTHA_OFFICE365_CONTEXT_KEY_FILE;
++  const readKey = dependencies.readKey ?? (() => readFileSync(keyFile, "utf8").trim());
++  return async (input, init) => {
++    const request = new Request(input, init);
++    // Scope the signing key to the exact configured MCP resource, never OAuth
++    // discovery, arbitrary Graph requests, redirects or another MCP endpoint.
++    const headers = new Headers(request.headers);
++    headers.delete("x-artha-gateway-context");
++    if (request.url === target && keyFile) {
++      const authorization = headers.get("authorization") ?? "";
++      if (authorization.startsWith("Bearer ")) {
++        const route = classifySession(options.sessionKey, options.requesterScope);
++        if (options.auth !== "oauth" || options.identity !== "per-requester" || !route) {
++          throw new Error("Office365 transport requires a trusted per-requester WhatsApp route");
++        }
++        const key = readKey();
++        if (Buffer.byteLength(key) < 32) throw new Error("Office365 transport signing key is invalid");
++        const epoch = Math.floor((dependencies.now?.() ?? Date.now()) / 1000);
++        const claims = { v: 1, aud: "artha-office365", identity_mode: "per-requester",
++          sender_id: options.requesterScope.requesterSenderId, channel: "whatsapp", ...route,
++          token_sha256: createHash("sha256").update(authorization.slice(7)).digest("hex"),
++          request_id: randomUUID(), iat: epoch, exp: epoch + 90 };
++        const encoded = Buffer.from(JSON.stringify(claims)).toString("base64url");
++        headers.set("x-artha-gateway-context", encoded + "." + createHmac("sha256", key).update(encoded).digest("hex"));
++      }
++    }
++    // Reconstructing preserves signal/body and drops any caller-forged envelope.
++    return fetchFn(new Request(request, { headers }));
++  };
++}
+diff --git a/src/agents/artha-office365-context.node-test.mjs b/src/agents/artha-office365-context.node-test.mjs
+new file mode 100644
+index 00000000000..840d959e697
+--- /dev/null
++++ b/src/agents/artha-office365-context.node-test.mjs
+@@ -0,0 +1,42 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { createHash, createHmac } from "node:crypto";
++import { classifySession, withArthaGatewayContext } from "./artha-office365-context.mjs";
++
++const requesterScope = { requesterSenderId: "+919999999999", messageChannel: "whatsapp", agentAccountId: "default" };
++const options = { auth: "oauth", identity: "per-requester", requesterScope, sessionKey: "agent:main:whatsapp:default:direct:+919999999999" };
++const key = "test-key-".repeat(8);
++const deps = { env: { ARTHA_OFFICE365_CONTEXT_KEY_FILE: "/test/host-only-key" }, readKey: () => key };
++
++test("signs the authenticated bearer and canonical private route on each request", async () => {
++  let received;
++  const wrapped = withArthaGatewayContext(async (request) => { received = request; return new Response("ok"); }, options, deps);
++  await wrapped("https://pitch.artha.vc/mcp", { method: "POST", body: "hello", headers: { Authorization: "Bearer caller-one" } });
++  const [encoded, signature] = received.headers.get("x-artha-gateway-context").split(".");
++  assert.equal(signature, createHmac("sha256", key).update(encoded).digest("hex"));
++  const claims = JSON.parse(Buffer.from(encoded, "base64url"));
++  assert.equal(claims.token_sha256, createHash("sha256").update("caller-one").digest("hex"));
++  assert.equal(claims.chat_kind, "private");
++  assert.equal(await received.text(), "hello");
++  await wrapped("https://pitch.artha.vc/mcp", { headers: { Authorization: "Bearer refreshed-token" } });
++  const refreshed = JSON.parse(Buffer.from(received.headers.get("x-artha-gateway-context").split(".")[0], "base64url"));
++  assert.notEqual(refreshed.token_sha256, claims.token_sha256);
++});
++
++test("distinguishes group routes and rejects ambiguous/shared identities", async () => {
++  assert.equal(classifySession("agent:main:whatsapp:group:123@g.us", requesterScope).chat_kind, "group");
++  for (const sessionKey of ["agent:main:main", "agent:main:whatsapp:default:direct:+911111111111", "agent:main:whatsapp:other:direct:+919999999999", "agent:main:subagent:abc"]) {
++    assert.equal(classifySession(sessionKey, requesterScope), null);
++  }
++  let called = false;
++  const wrapped = withArthaGatewayContext(async () => { called = true; return new Response(); }, { ...options, identity: "shared" }, deps);
++  await assert.rejects(() => wrapped("https://pitch.artha.vc/mcp", { headers: { Authorization: "Bearer shared" } }));
++  assert.equal(called, false);
++});
++
++test("never signs another endpoint and removes forged context", async () => {
++  let received;
++  const wrapped = withArthaGatewayContext(async (request) => { received = request; return new Response(); }, options, deps);
++  await wrapped("https://elsewhere.example/mcp", { headers: { Authorization: "Bearer token", "x-artha-gateway-context": "forged" } });
++  assert.equal(received.headers.has("x-artha-gateway-context"), false);
++});
+diff --git a/src/agents/mcp-transport.ts b/src/agents/mcp-transport.ts
+index 59c9792eb38..f6c80a55fc3 100644
+--- a/src/agents/mcp-transport.ts
++++ b/src/agents/mcp-transport.ts
+@@ -11,6 +11,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
+ import { logDebug } from "../logger.js";
+ import { truncateUtf8Suffix } from "../utils/utf8-truncate.js";
+ import type { SessionMcpRequesterScope } from "./agent-bundle-mcp-types.js";
++import { withArthaGatewayContext } from "./artha-office365-context.mjs";
+ import { resolveMcpAuthProfileId, withMcpAuthProfileBearer } from "./mcp-auth-profile.js";
+ import {
+   buildMcpHttpFetch,
+@@ -130,6 +131,7 @@ export function resolveMcpTransport(
+     agentDir?: string;
+     prepareDataDir?: string;
+     requesterScope?: SessionMcpRequesterScope;
++    sessionKey?: string;
+   },
+ ): ResolvedMcpTransport | null {
+   const resolved = resolveMcpTransportConfig(serverName, rawServer);
+@@ -168,12 +170,22 @@ export function resolveMcpTransport(
+   }
+   // The SDK reuses one fetch for OAuth and long-lived SSE/streamable bodies.
+   // Per-RPC deadlines belong to client calls, not this transport fetch.
+-  const baseFetch = buildMcpHttpFetch({
+-    sslVerify: resolved.sslVerify,
+-    clientCert: resolved.clientCert,
+-    clientKey: resolved.clientKey,
+-    resourceUrl: resolved.url,
+-  });
++  // Innermost wrapper: it sees the bearer that withMcpOAuthBearer attached and
++  // signs the host-owned requester route for the Artha MCP resource only.
++  const baseFetch = withArthaGatewayContext(
++    buildMcpHttpFetch({
++      sslVerify: resolved.sslVerify,
++      clientCert: resolved.clientCert,
++      clientKey: resolved.clientKey,
++      resourceUrl: resolved.url,
++    }),
++    {
++      auth: resolved.auth,
++      identity: resolved.oauth?.identity,
++      requesterScope,
++      sessionKey: options?.sessionKey,
++    },
++  );
+   const headers =
+     resolved.auth === "oauth" || authProfileId
+       ? withoutMcpAuthorizationHeader(resolved.headers)
