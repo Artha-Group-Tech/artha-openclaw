@@ -8,6 +8,7 @@ import type { SSEClientTransportOptions, FetchLike, Transport } from "@modelcont
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { logDebug } from "../logger.js";
 import type { SessionMcpRequesterScope } from "./agent-bundle-mcp-types.js";
+import { withArthaGatewayContext } from "./artha-office365-context.mjs";
 import { resolveMcpAuthProfileId, withMcpAuthProfileBearer } from "./mcp-auth-profile.js";
 import { withMcpEnterpriseBearer } from "./mcp-enterprise-fetch.js";
 import {
@@ -91,6 +92,7 @@ export function resolveMcpTransport(
     agentDir?: string;
     prepareDataDir?: string;
     requesterScope?: SessionMcpRequesterScope;
+    sessionKey?: string;
     /** Protocol-owned headers for a single stateless request, not credential overrides. */
     requestHeaders?: Record<string, string>;
     /** Recheck the owning operation after asynchronous auth and before HTTP effects. */
@@ -140,14 +142,24 @@ export function resolveMcpTransport(
   }
   // The SDK reuses one fetch for OAuth and long-lived SSE/streamable bodies.
   // Per-RPC deadlines belong to client calls, not this transport fetch.
-  const baseFetch = buildMcpHttpFetch({
-    sslVerify: resolved.sslVerify,
-    clientCert: resolved.clientCert,
-    clientKey: resolved.clientKey,
-    resourceUrl: resolved.url,
-    requestTimeoutMs: resolved.requestTimeoutMs,
-    beforeRequest: options?.beforeRequest,
-  });
+  // Innermost wrapper: it sees the bearer that withMcpOAuthBearer attached and
+  // signs the host-owned requester route for the Artha MCP resource only.
+  const baseFetch = withArthaGatewayContext(
+    buildMcpHttpFetch({
+      sslVerify: resolved.sslVerify,
+      clientCert: resolved.clientCert,
+      clientKey: resolved.clientKey,
+      resourceUrl: resolved.url,
+      requestTimeoutMs: resolved.requestTimeoutMs,
+      beforeRequest: options?.beforeRequest,
+    }),
+    {
+      auth: resolved.auth,
+      identity: resolved.oauth?.identity,
+      requesterScope,
+      sessionKey: options?.sessionKey,
+    },
+  );
   const headers =
     resolved.auth === "oauth" || resolved.auth === "enterprise" || authProfileId
       ? withoutMcpAuthorizationHeader(resolved.headers)
