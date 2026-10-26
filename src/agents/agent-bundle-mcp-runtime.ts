@@ -338,6 +338,7 @@ function createServerMcpRuntime(
           agentDir: params.agentDir,
           prepareDataDir: loaded.prepareDataDirsByServer?.[serverName]?.dataDir,
           requesterScope: params.requesterScope,
+          sessionKey: params.sessionKey,
         });
       const resolved = resolveTransport();
       if (!resolved) {
