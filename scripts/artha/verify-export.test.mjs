@@ -22,8 +22,13 @@ for (const present of [false, true]) {
           : "// upstream-only transport",
       );
       const run = () => execFileSync(process.execPath, [verifier, dir], { stdio: "pipe" });
-      if (present) assert.equal(JSON.parse(run().toString()).signerPresent, true);
-      else assert.throws(run);
+      if (present) {
+        assert.equal(JSON.parse(run().toString()).signerPresent, true);
+        execFileSync(process.execPath, [verifier, dir, "2026.9.1"], { stdio: "pipe" });
+        assert.throws(() =>
+          execFileSync(process.execPath, [verifier, dir, "2026.10.5"], { stdio: "pipe" }),
+        );
+      } else assert.throws(run);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

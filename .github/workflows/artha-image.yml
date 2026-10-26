@@ -23,34 +23,48 @@ jobs:
     outputs:
       image: ${{ steps.publish.outputs.image }}
       version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.runtime.outputs.commit }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      # NemoClaw's reviewed dependency graph is 2026.9.1. This source includes
+      # the Office365 transport; bump the immutable ref with its compatibility PR.
+      - name: Checkout reviewed runtime source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 1090ebf9619d683e3a667add7de9b40bdde7a694
+          path: runtime-source
+          persist-credentials: false
+      - id: runtime
+        run: echo "commit=$(git -C runtime-source rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - run: node --test runtime-source/src/agents/artha-office365-context.node-test.mjs
       - run: python3 -m unittest discover -s scripts/artha -p 'test_*.py' -v
       - run: node --test scripts/artha/verify-export.test.mjs
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build ARM64 runtime without credentials
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
-          context: .
+          context: ./runtime-source
           platforms: linux/arm64
           load: true
           tags: artha-openclaw:ci
           provenance: false
           labels: |
             org.opencontainers.image.source=https://github.com/Artha-Group-Tech/artha-openclaw
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ steps.runtime.outputs.commit }}
           cache-from: type=gha,scope=artha-openclaw
           cache-to: type=gha,scope=artha-openclaw,mode=max
       - name: Verify exported package and required signer
         run: |
           docker run --rm --network none --entrypoint node \
             -v "$PWD/scripts/artha/verify-export.mjs:/verify-export.mjs:ro" \
-            artha-openclaw:ci /verify-export.mjs /app
+            artha-openclaw:ci /verify-export.mjs /app 2026.9.1
+          docker run --rm --network none --entrypoint node artha-openclaw:ci \
+            -e 'if (process.platform !== "linux" || process.arch !== "arm64") throw Error("Expected native Linux ARM64 runtime")'
           docker run --rm --network none --entrypoint node artha-openclaw:ci openclaw.mjs --version
       - id: version
-        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -p 'require("./runtime-source/package.json").version')" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
@@ -59,7 +73,7 @@ jobs:
       - id: publish
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.runtime.outputs.commit }}
         run: |
           set -euo pipefail
           CONFIG=$(aws ssm get-parameter --name "$DEPLOYMENT_PARAMETER" --query Parameter.Value --output text)
@@ -118,7 +132,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           IMAGE: ${{ needs.image.outputs.image }}
           VERSION: ${{ needs.image.outputs.version }}
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ needs.image.outputs.commit }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
           set -euo pipefail
