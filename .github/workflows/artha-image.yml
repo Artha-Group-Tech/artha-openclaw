@@ -113,9 +113,14 @@ jobs:
           name: artha-openclaw-release
           path: openclaw-release.json
 
+      - name: Explain manual promotion when the GitHub App is unconfigured
+        if: steps.publish.outcome == 'success' && vars.ARTHA_PROMOTION_APP_ID == ''
+        run: |
+          printf '%s\n' 'Automatic NemoClaw pin-update PR skipped: ARTHA_PROMOTION_APP_ID is unset. Use the published release ID in NemoClaw’s openclaw_release input. To enable automatic PRs, configure ARTHA_PROMOTION_APP_ID and ARTHA_PROMOTION_APP_PRIVATE_KEY.' >> "$GITHUB_STEP_SUMMARY"
+
   promote:
     needs: image
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.ARTHA_PROMOTION_APP_ID != ''
     runs-on: ubuntu-24.04
     concurrency:
       group: artha-openclaw-pin-update
