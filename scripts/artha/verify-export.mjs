@@ -4,6 +4,9 @@ const root = process.argv[2] ?? "/app";
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json")));
 if (pkg.name !== "openclaw" || !/^\d+\.\d+\.\d+$/.test(pkg.version))
   throw Error("Invalid OpenClaw package");
+const expectedVersion = process.argv[3];
+if (expectedVersion && pkg.version !== expectedVersion)
+  throw Error(`Expected OpenClaw ${expectedVersion}, received ${pkg.version}`);
 let found = false;
 function walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
