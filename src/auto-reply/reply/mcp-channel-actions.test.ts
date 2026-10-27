@@ -99,3 +99,55 @@ it("preserves payloads when no channel action can be attached", () => {
     }
   }
 });
+
+it.each([
+  ["bare", (url: string) => url],
+  ["Markdown", (url: string) => `[Sign in](${url} "DFS login")`],
+  ["autolink", (url: string) => `<${url}>`],
+  ["URL-labelled Markdown", (url: string) => `[${url}](${url} "${url}")`],
+  ["escaped Markdown", (url: string) => `[Sign in](${url.replaceAll("&", "\\&")})`],
+  ["HTML-escaped Markdown", (url: string) => `[Sign in](${url.replaceAll("&", "&amp;")})`],
+])("delivers only the current Connect link instead of a stale %s link", (_kind, link) => {
+  const stale = "https://auth.example/authorize?client_id=calendar&state=old&code_challenge=old";
+  const current =
+    "https://auth.example/authorize?client_id=calendar&state=current&code_challenge=Current_CASE";
+  const other = "https://docs.example/help";
+  const source = setReplyPayloadMetadata(
+    { text: `Here's your login link:\n\n${link(stale)}\n\nKeep [these instructions](${other}).` },
+    {
+      sessionWriterDeliveryAuthority: {
+        sessionKey: "agent:main:main",
+        expectedSessionId: "session-original",
+        expectedWriterRunId: "writer-original",
+      },
+    },
+  );
+  const input = [{ text: stale }, source];
+  const output = attachConnect({
+    payloads: input,
+    action: { serverName: "calendar", authorizationUrl: current },
+  });
+  const delivered = output.map(renderFallback).join("\n\n");
+  expect(delivered).not.toContain(stale);
+  expect(delivered.match(/https:\/\/auth\.example\/authorize[^\s]+/gu)).toEqual([current]);
+  expect(delivered).toContain(`Keep [these instructions](${other}).`);
+  expect(source.text).toContain(link(stale));
+  expect(
+    isAuthorized(output[1]!, {
+      sessionId: "session-original",
+      activeWriterRunId: "writer-original",
+    }),
+  ).toBe(true);
+});
+
+it("deduplicates a model-echoed current URL and preserves other clients' links", () => {
+  const current = "https://auth.example/authorize?client_id=calendar&state=current";
+  const other = "https://auth.example/authorize?client_id=mail&state=other";
+  const output = attachConnect({
+    payloads: [{ text: `Sign in: ${current}\n\nOther account: ${other}` }],
+    action: { serverName: "calendar", authorizationUrl: current },
+  });
+  const delivered = output.map(renderFallback).join("\n");
+  expect(delivered.split(current)).toHaveLength(2);
+  expect(delivered).toContain(other);
+});
