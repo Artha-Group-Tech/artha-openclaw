@@ -609,6 +609,7 @@ function* assembleOpenClawCodingTools(
     sessionKey: executionSessionKey,
     sessionId: options?.sessionId,
     runId: options?.runId,
+    sourceMessageId: options?.currentMessageId,
     trigger: options?.trigger,
     approvalReviewerDeviceId: options?.approvalReviewerDeviceId,
     channelId: options?.hookChannelId ?? options?.currentChannelId,

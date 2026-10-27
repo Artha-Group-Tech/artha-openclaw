@@ -28,6 +28,7 @@ import { prepareConversationCapabilityProfile } from "../../conversation-capabil
 import { projectConversationToolNames } from "../../conversation-tool-policy-pipeline.js";
 import { gateBoundTool } from "../../harness/host-bound-tool.js";
 import { isWorkspaceTool } from "../../harness/host-capability-workspace.js";
+import { buildHarnessHostRequester } from "../../harness/host-requester.js";
 import { createAgentHarnessToolSurfaceRuntimeCore } from "../../harness/tool-surface-bridge.js";
 import {
   isLocalModelLeanEnabled,
@@ -482,6 +483,8 @@ export async function prepareEmbeddedAttemptToolBase(params: {
         sessionKey: params.setup.sandboxSessionKey,
         sessionId: attempt.sessionId,
         runId: attempt.runId,
+        sourceMessageId: attempt.currentMessageId,
+        requester: buildHarnessHostRequester(attempt),
         approvalReviewerDeviceId: attempt.approvalReviewerDeviceId,
         channelId: attempt.currentChannelId,
         trace: params.runTrace,
