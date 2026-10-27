@@ -42,7 +42,10 @@ The automatic cross-repository promotion job uses a GitHub App scoped to
 `artha-nemoclaw`. Configure its ID as `ARTHA_PROMOTION_APP_ID` and private key
 as `ARTHA_PROMOTION_APP_PRIVATE_KEY`. Its only repository permissions are
 Contents and Pull requests read/write. Manual release selection in NemoClaw
-provides a same-repository alternative while that App is unconfigured.
+provides a same-repository alternative while that App is unconfigured. When
+`ARTHA_PROMOTION_APP_ID` is unset, the automatic promotion job is skipped and
+the image summary explains the manual path. Configured promotion still fails
+if its credentials or PR update fail; those errors are not suppressed.
 
 Automation owns `automation/openclaw-image`. It opens or updates one PR changing `deploy/release.json`; it never merges or deploys that PR. The NemoClaw gate rejects an export version that differs from its reviewed dependency graph. An OpenClaw version bump must include the corresponding reviewed NemoClaw compatibility changes.
 
