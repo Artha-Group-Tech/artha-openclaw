@@ -58,3 +58,23 @@ export function withSessionMcpCallerAuthority<A extends unknown[], T>(
       }
     : request;
 }
+
+/** Host facts for this invocation; never part of the cached MCP requester identity. */
+export type SessionMcpSourceMessage = {
+  sessionKey?: string;
+  messageId: string;
+  requester?: { channel?: string; accountId?: string; senderId?: string };
+};
+const sourceMessages = resolveGlobalSingleton<
+  AsyncLocalStorage<SessionMcpSourceMessage | undefined>
+>(Symbol.for("openclaw.sessionMcpSourceMessage"), () => new AsyncLocalStorage());
+export function getSessionMcpSourceMessage(): SessionMcpSourceMessage | undefined {
+  return sourceMessages.getStore();
+}
+export function runWithSessionMcpSourceMessage<T>(
+  source: SessionMcpSourceMessage | undefined,
+  run: () => T,
+): T {
+  // Clear outer scopes too: a nested tool without source facts must not inherit them.
+  return sourceMessages.run(source, run);
+}

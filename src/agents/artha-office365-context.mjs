@@ -46,6 +46,39 @@ export function withArthaGatewayContext(fetchFn, options, dependencies = {}) {
         const key = readKey();
         if (Buffer.byteLength(key) < 32)
           throw new Error("Office365 transport signing key is invalid");
+        const source = options.getSourceMessage?.();
+        let hostActionId;
+        if (source) {
+          const normalize = (value) =>
+            String(value ?? "")
+              .replace(/@s\.whatsapp\.net$/, "")
+              .replace(/^\+/, "");
+          if (
+            source.sessionKey !== options.sessionKey ||
+            source.requester?.channel !== "whatsapp" ||
+            source.requester?.accountId !== options.requesterScope.agentAccountId ||
+            normalize(source.requester?.senderId) !==
+              normalize(options.requesterScope.requesterSenderId) ||
+            !source.messageId?.trim() ||
+            source.messageId.length > 500
+          )
+            throw new Error(
+              "Office365 source message does not match the authenticated requester route",
+            );
+          hostActionId =
+            "msg_" +
+            createHash("sha256")
+              .update(
+                JSON.stringify([
+                  "artha-outlook-message-v1",
+                  source.sessionKey,
+                  source.requester.accountId,
+                  normalize(source.requester.senderId),
+                  source.messageId,
+                ]),
+              )
+              .digest("hex");
+        }
         const epoch = Math.floor((dependencies.now?.() ?? Date.now()) / 1000);
         const claims = {
           v: 1,
@@ -56,6 +89,7 @@ export function withArthaGatewayContext(fetchFn, options, dependencies = {}) {
           ...route,
           token_sha256: createHash("sha256").update(authorization.slice(7)).digest("hex"),
           request_id: randomUUID(),
+          ...(hostActionId ? { host_action_id: hostActionId } : {}),
           iat: epoch,
           exp: epoch + 90,
         };

@@ -14,6 +14,7 @@ import {
 import { pruneMapToMaxSize } from "../infra/map-size.js";
 import { captureDiagnosticToolProgress } from "../logging/diagnostic-run-activity.js";
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
+import { runWithSessionMcpSourceMessage } from "./agent-bundle-mcp-request-context.js";
 import { copyBeforeToolCallWrapperMetadata } from "./agent-tool-metadata.js";
 import {
   captureAgentToolExecutionBudget,
@@ -501,7 +502,16 @@ export function wrapToolWithBeforeToolCallHook(
               admitExecution?.();
               onImplementationStart?.();
               recordAdjustedParamsForToolCall(toolCallId, executeParams, ctx?.runId);
-              return liveness.run(() => (execute as ForwardedToolExecution)(...args));
+              return runWithSessionMcpSourceMessage(
+                ctx?.sourceMessageId !== undefined
+                  ? {
+                      sessionKey: ctx.sessionKey,
+                      messageId: String(ctx.sourceMessageId),
+                      requester: ctx.requester,
+                    }
+                  : undefined,
+                () => liveness.run(() => (execute as ForwardedToolExecution)(...args)),
+              );
             });
           result = outcome.ownerDecision
             ? await invoke()
