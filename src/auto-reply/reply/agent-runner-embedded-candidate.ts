@@ -3,6 +3,7 @@ import type {
   CompactionAccountingFact,
   RunEmbeddedAgentInternalParams,
 } from "../../agents/embedded-agent-runner/run/internal-params.js";
+import { withConnectorSource } from "../../agents/artha-connector-context.mjs";
 import { runEmbeddedAgent } from "../../agents/embedded-agent.js";
 import { resolveAgentHarnessPolicy } from "../../agents/harness/policy.js";
 import type { ReplyDeliveryState } from "../../agents/reply-completion.js";
@@ -27,6 +28,7 @@ import type { AgentFallbackCandidateCommonParams } from "./agent-runner-fallback
 import { buildFallbackCandidateTurnParams } from "./agent-runner-run-params.js";
 import { buildEmbeddedRunExecutionParams } from "./agent-runner-utils.js";
 import type { DirectBlockDelivery } from "./reply-delivery.js";
+import { resolveReplyRunTrigger } from "./reply-turn-kind.js";
 import { resolveReplyOperationTerminationFields } from "./reply-operation-abort.js";
 import {
   bindSourceReplyDeliveryRuntime,
@@ -344,7 +346,28 @@ export async function runEmbeddedFallbackCandidate(
         };
       };
       params.scheduledInference?.assertCandidate(params.provider, false);
-      return runEmbeddedAgent(embeddedRunParams);
+      // Source custody is evaluated for every HTTP request, not captured in the
+      // session-cached MCP transport. Detached work loses this scope at settle.
+      return withConnectorSource(() => {
+        if (resolveReplyRunTrigger(turn) !== "user" ||
+            turn.followupRun.run.subagentSpawnLineage || params.runAbortSignal?.aborted) {
+          return undefined;
+        }
+        params.preparedRunAdmission.assertSourceCurrent();
+        const messageId = turn.followupRun.messageId ?? embeddedRunParams.currentMessageId;
+        if (!messageId) return undefined;
+        return {
+          sessionKey: embeddedRunParams.sessionKey,
+          messageId: String(messageId),
+          channel: embeddedRunParams.messageChannel ?? embeddedRunParams.messageProvider,
+          accountId: embeddedRunParams.agentAccountId,
+          senderId: embeddedRunParams.senderId,
+          assertCurrent: () => {
+            params.runAbortSignal?.throwIfAborted();
+            params.preparedRunAdmission.assertSourceCurrent();
+          },
+        };
+      }, () => runEmbeddedAgent(embeddedRunParams));
     });
     const resultCompactionCount = Math.max(0, result.meta?.agentMeta?.compactionCount ?? 0);
     attemptCompactionCount = Math.max(attemptCompactionCount, resultCompactionCount);

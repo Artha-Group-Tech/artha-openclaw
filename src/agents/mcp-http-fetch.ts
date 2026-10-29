@@ -95,7 +95,7 @@ function buildMcpHttpFetchWithRedirectPolicy(
       url: request.url,
       init: request.init,
       fetchImpl: fetchWithUndiciGuard,
-      maxRedirects: MCP_HTTP_MAX_REDIRECTS,
+      maxRedirects: request.init?.redirect === "error" ? 0 : MCP_HTTP_MAX_REDIRECTS,
       ...(redirectPolicy === "reject"
         ? { rejectCrossOriginUnsafeRedirectReplay: true }
         : { allowCrossOriginUnsafeRedirectReplay: true }),

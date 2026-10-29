@@ -118,6 +118,24 @@ describe("MCP HTTP fetch helpers", () => {
     delete testGlobal[TEST_UNDICI_RUNTIME_DEPS_KEY];
   });
 
+  it("never follows a redirect when the signed request forbids replay", async () => {
+    let requests = 0;
+    useFetch(async () => {
+      requests += 1;
+      return new Response(null, {
+        status: 307,
+        headers: { location: "https://other.example/mcp" },
+      });
+    });
+    const fetch = buildMcpHttpFetch({ resourceUrl: "https://mcp.example.com/mcp" });
+    await expect(fetch(new Request("https://mcp.example.com/mcp", {
+      method: "POST",
+      body: "signed request",
+      redirect: "error",
+    }))).rejects.toThrow("Too many redirects (limit: 0)");
+    expect(requests).toBe(1);
+  });
+
   it("scopes TLS overrides to the MCP resource origin", async () => {
     const fetch = buildMcpHttpFetch({
       sslVerify: false,
