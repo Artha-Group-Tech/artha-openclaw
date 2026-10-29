@@ -12,6 +12,7 @@ const LATE_CALLABLE_PLUGIN_API_METHODS: ReadonlySet<string> = new Set<
   "enqueueNextTurnInjection",
   "steerActiveRun",
   "getRunContext",
+  "listSessionTurns",
   "sendSessionAttachment",
   "scheduleSessionTurn",
   "setRunContext",

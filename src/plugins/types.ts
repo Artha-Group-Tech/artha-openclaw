@@ -47,6 +47,8 @@ export type {
   PluginSessionTurnScheduleParams,
   PluginSessionTurnUnscheduleByTagParams,
   PluginSessionTurnUnscheduleByTagResult,
+  PluginSessionTurnListParams,
+  PluginScheduledSessionTurn,
   PluginToolMetadataRegistration,
   PluginTrustedToolPolicyRegistration,
 } from "./host-hooks.js";

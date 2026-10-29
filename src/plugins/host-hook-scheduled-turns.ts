@@ -5,11 +5,14 @@ import {
 } from "@openclaw/normalization-core/number-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { createAccountCronScheduledToolPolicy } from "../cron/scheduled-tool-policy.js";
 import type { CronServiceContract } from "../cron/service-contract.js";
 import {
   readCanonicalCronListPage,
   resolveCronListPageNextOffset,
 } from "../cron/service/list-page-validation.js";
+import type { CronAddOptions } from "../cron/service/state.js";
+import { normalizeCronAuthenticatedChannelRequester } from "../cron/tools-allow-provenance.js";
 import type { CronJob, CronJobCreate } from "../cron/types.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -18,7 +21,9 @@ import {
   registerPluginSessionSchedulerJob,
 } from "./host-hook-runtime.js";
 import type {
+  PluginScheduledSessionTurn,
   PluginSessionSchedulerJobHandle,
+  PluginSessionTurnListParams,
   PluginSessionTurnScheduleParams,
   PluginSessionTurnUnscheduleByTagParams,
   PluginSessionTurnUnscheduleByTagResult,
@@ -166,6 +171,51 @@ async function listAllCronJobsForPluginTagCleanup(
   throw new Error("cron.list pagination exceeded maximum pages");
 }
 
+/**
+ * Builds the cron owner, account policy and requester provenance for a requester-scoped turn.
+ * Returns undefined when no requester was given and null when the requester is unusable.
+ */
+function resolveRequesterAuthority(params: {
+  sessionKey: string;
+  requester: PluginSessionTurnScheduleParams["requester"];
+  hasToolsAllow: boolean;
+}):
+  | { owner: { sessionKey: string; accountId: string }; options: CronAddOptions }
+  | null
+  | undefined {
+  if (params.requester === undefined) {
+    return undefined;
+  }
+  const channelRequester = normalizeCronAuthenticatedChannelRequester({
+    version: 1,
+    channel: params.requester.channel,
+    accountId: params.requester.accountId,
+    senderId: params.requester.senderId,
+  });
+  // Cron only honours requester provenance on jobs whose tools are capped.
+  if (!channelRequester || !params.hasToolsAllow) {
+    return null;
+  }
+  const scheduledToolPolicy = createAccountCronScheduledToolPolicy({
+    ownerSessionKey: params.sessionKey,
+    ownerAccountId: channelRequester.accountId,
+  });
+  if (!scheduledToolPolicy) {
+    return null;
+  }
+  return {
+    owner: { sessionKey: params.sessionKey, accountId: channelRequester.accountId },
+    options: {
+      scheduledToolPolicy,
+      toolsAllowProvenance: {
+        version: 1,
+        source: "authenticated-requester",
+        channelRequester,
+      },
+    },
+  };
+}
+
 export async function schedulePluginSessionTurn(params: {
   pluginId: string;
   pluginName?: string;
@@ -226,13 +276,24 @@ export async function schedulePluginSessionTurn(params: {
     ...(tag !== undefined ? { tag } : {}),
     ...(scheduleName ? { uniqueId: scheduleName } : {}),
   });
+  const toolsAllow = params.schedule.toolsAllow;
   const cronPayload: CronJobCreate["payload"] = {
     kind: "agentTurn",
     message,
+    ...(toolsAllow ? { toolsAllow: [...toolsAllow] } : {}),
   };
+  const requesterAuthority = resolveRequesterAuthority({
+    sessionKey,
+    requester: params.schedule.requester,
+    hasToolsAllow: toolsAllow !== undefined,
+  });
+  if (requesterAuthority === null) {
+    logSchedulingFailure("requester needs channel, accountId, senderId and toolsAllow");
+    return undefined;
+  }
   let result: Awaited<ReturnType<CronServiceContract["add"]>>;
   try {
-    result = await cron.add({
+    const cronJob: CronJobCreate = {
       name: cronJobName,
       enabled: true,
       schedule: cronSchedule,
@@ -245,7 +306,11 @@ export async function schedulePluginSessionTurn(params: {
         mode: cronDeliveryMode,
         ...(cronDeliveryMode === "announce" ? { channel: "last" } : {}),
       },
-    });
+      ...(requesterAuthority ? { owner: requesterAuthority.owner } : {}),
+    };
+    result = requesterAuthority
+      ? await cron.add(cronJob, requesterAuthority.options)
+      : await cron.add(cronJob);
   } catch (error) {
     logSchedulingFailure(formatErrorMessage(error), cronJobName);
     return undefined;
@@ -273,6 +338,10 @@ export async function schedulePluginSessionTurn(params: {
       );
     }
     return undefined;
+  }
+  if (params.schedule.keepOnSessionReset === true) {
+    // Not registered for session cleanup, so a session reset leaves the job in Cron.
+    return { id: jobId, pluginId: params.pluginId, sessionKey, kind: "session-turn" };
   }
   return registerPluginSessionSchedulerJob({
     pluginId: params.pluginId,
@@ -359,4 +428,71 @@ export async function unschedulePluginSessionTurnsByTag(params: {
     }
   }
   return { removed, failed };
+}
+
+function readPluginSchedulerTag(name: string, pluginId: string): string | undefined {
+  const prefix = `${PLUGIN_CRON_NAME_PREFIX}${pluginId}${PLUGIN_CRON_TAG_MARKER}`;
+  if (!name.startsWith(prefix)) {
+    return undefined;
+  }
+  const tag = name.slice(prefix.length).split(PLUGIN_CRON_RESERVED_DELIMITER, 1)[0];
+  return tag || undefined;
+}
+
+function toPluginScheduledSessionTurn(
+  job: CronJob,
+  pluginId: string,
+): PluginScheduledSessionTurn | undefined {
+  if (job.payload.kind !== "agentTurn") {
+    return undefined;
+  }
+  const schedule: PluginScheduledSessionTurn["schedule"] =
+    job.schedule.kind === "at"
+      ? { kind: "at", at: job.schedule.at }
+      : job.schedule.kind === "cron"
+        ? {
+            kind: "cron",
+            expr: job.schedule.expr,
+            ...(job.schedule.tz ? { tz: job.schedule.tz } : {}),
+          }
+        : { kind: "other" };
+  const tag = readPluginSchedulerTag(job.name, pluginId);
+  return {
+    id: job.id,
+    ...(tag ? { tag } : {}),
+    message: job.payload.message,
+    schedule,
+    enabled: job.enabled,
+    ...(job.state.nextRunAtMs !== undefined ? { nextRunAtMs: job.state.nextRunAtMs } : {}),
+  };
+}
+
+/** Lists the calling plugin's Cron-backed turns for one session, tagged or not. */
+export async function listPluginSessionTurns(params: {
+  pluginId: string;
+  origin?: PluginOrigin;
+  cron?: CronServiceContract;
+  request: PluginSessionTurnListParams;
+}): Promise<PluginScheduledSessionTurn[]> {
+  if (params.origin !== "bundled") {
+    return [];
+  }
+  const sessionKey = normalizeOptionalString(params.request.sessionKey);
+  if (!sessionKey) {
+    return [];
+  }
+  if (!params.cron) {
+    log.warn("plugin session turn list failed: cron service unavailable");
+    return [];
+  }
+  const namePrefix = `${PLUGIN_CRON_NAME_PREFIX}${params.pluginId}:`;
+  const jobs = await listAllCronJobsForPluginTagCleanup(params.cron, namePrefix);
+  // The session key is matched on the job target; names only scope the plugin.
+  return jobs.flatMap((job) => {
+    if (!job.name.startsWith(namePrefix) || job.sessionTarget !== `session:${sessionKey}`) {
+      return [];
+    }
+    const turn = toPluginScheduledSessionTurn(job, params.pluginId);
+    return turn ? [turn] : [];
+  });
 }

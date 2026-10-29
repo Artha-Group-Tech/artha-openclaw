@@ -16,6 +16,7 @@ import {
   setPluginRunContext,
 } from "./host-hook-runtime.js";
 import {
+  listPluginSessionTurns,
   schedulePluginSessionTurn,
   unschedulePluginSessionTurnsByTag,
 } from "./host-hook-scheduled-turns.js";
@@ -372,6 +373,18 @@ export function createPluginRegistry(registryOptions: PluginRegistryParams) {
                   return { removed: 0, failed: 0 };
                 }
                 return unschedulePluginSessionTurnsByTag({
+                  pluginId: record.id,
+                  origin: record.origin,
+                  cron: getHostCronService(),
+                  request,
+                });
+              },
+              listSessionTurns: async (request) => {
+                if (registryParams.activateGlobalSideEffects === false) {
+                  return [];
+                }
+                await Promise.resolve();
+                return listPluginSessionTurns({
                   pluginId: record.id,
                   origin: record.origin,
                   cron: getHostCronService(),

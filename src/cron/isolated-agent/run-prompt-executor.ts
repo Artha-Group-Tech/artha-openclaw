@@ -128,6 +128,8 @@ export function createCronPromptExecutor(
     execTarget: params.job.toolsAllowExecTarget,
   });
   const { sourceDelivery, runId } = params;
+  // Authenticated chat requester captured at creation; scoped to the job's account policy.
+  const channelRequester = resolveCronAuthenticatedChannelRequester(params.job);
   const messageChannel = sourceDelivery.target.channel ?? params.resolvedDelivery.channel;
   if (scheduledToolPolicy?.mode === "account") {
     const callerContext = resolveScheduledToolCallerContext({ scheduledToolPolicy });
@@ -219,7 +221,7 @@ export function createCronPromptExecutor(
       sessionId: params.cronSession.sessionEntry.sessionId,
       sessionKey: params.runSessionKey,
       jobId: params.job.id,
-      channelRequester: resolveCronAuthenticatedChannelRequester(params.job),
+      channelRequester,
       toolsAllow: params.agentPayload?.toolsAllow,
       scheduledToolPolicy,
       executionIdentity: params.executionIdentity,
@@ -457,6 +459,11 @@ export function createCronPromptExecutor(
             skillsSnapshot: params.skillsSnapshot,
             messageChannel,
             agentAccountId: params.resolvedDelivery.accountId,
+            // A requester-scoped job runs as that non-owner sender, so requester-scoped
+            // MCP servers use the sender's own connection and owner-only tools stay denied.
+            ...(channelRequester
+              ? { senderId: channelRequester.senderId, senderIsOwner: false }
+              : {}),
             extraSystemPrompt: params.deliverySystemPrompt,
             sourceReplyDeliveryMode: sourceDelivery.sourceReplyDeliveryMode,
             requireExplicitMessageTarget: sourceDelivery.messageTool.requireExplicitTarget,

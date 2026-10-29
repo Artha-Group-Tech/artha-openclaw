@@ -50,6 +50,8 @@ import type {
   PluginSessionTurnScheduleParams,
   PluginSessionTurnUnscheduleByTagParams,
   PluginSessionTurnUnscheduleByTagResult,
+  PluginSessionTurnListParams,
+  PluginScheduledSessionTurn,
   PluginToolMetadataRegistration,
   PluginTrustedToolPolicyRegistration,
 } from "./host-hooks.js";
@@ -162,6 +164,11 @@ type OpenClawPluginSessionWorkflowApi = {
   unscheduleSessionTurnsByTag: (
     params: PluginSessionTurnUnscheduleByTagParams,
   ) => Promise<PluginSessionTurnUnscheduleByTagResult>;
+  /**
+   * List this plugin's Cron-backed scheduled turns for one session.
+   * Bundled plugins only; workspace plugins receive an empty list.
+   */
+  listSessionTurns: (params: PluginSessionTurnListParams) => Promise<PluginScheduledSessionTurn[]>;
 };
 
 type OpenClawPluginSessionControlsApi = {

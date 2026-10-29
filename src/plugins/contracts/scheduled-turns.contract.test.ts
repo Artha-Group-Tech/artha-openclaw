@@ -18,6 +18,7 @@ import {
 } from "../host-hook-runtime.js";
 import { listPluginSessionSchedulerJobs } from "../host-hook-runtime.test-fixtures.js";
 import {
+  listPluginSessionTurns,
   schedulePluginSessionTurn,
   unschedulePluginSessionTurnsByTag,
 } from "../host-hook-scheduled-turns.js";
@@ -999,5 +1000,102 @@ describe("plugin scheduled turns", () => {
     expect(workflowMocks.cronAdd).not.toHaveBeenCalled();
     expect(workflowMocks.cronListPage).not.toHaveBeenCalled();
     expect(workflowMocks.cronRemove).not.toHaveBeenCalled();
+  });
+
+  it("keeps session-reset-surviving turns out of session cleanup and caps their tools", async () => {
+    mockCronAdd(makeCronJob({ id: "job-kept" }));
+
+    const handle = await scheduleWorkflowTurn({
+      schedule: { tag: "r1a2b3c4d", keepOnSessionReset: true, toolsAllow: [] },
+    });
+
+    expectSessionTurnHandle(handle, "job-kept");
+    expect(getCronAddBody().payload).toEqual({ kind: "agentTurn", message: "wake", toolsAllow: [] });
+    expect(listPluginSessionSchedulerJobs(WORKFLOW_PLUGIN_ID)).toEqual([]);
+    await cleanupPluginSessionSchedulerJobs({ reason: "reset", sessionKey: MAIN_SESSION_KEY });
+    expect(workflowMocks.cronRemove).not.toHaveBeenCalled();
+  });
+
+  it("stamps requester-scoped turns with account policy and requester provenance", async () => {
+    mockCronAdd(makeCronJob({ id: "job-task" }));
+    const requester = { channel: "whatsapp", accountId: "default", senderId: "+15550000001" };
+
+    const handle = await scheduleWorkflowTurn({
+      schedule: { tag: "r1a2b3c4d", toolsAllow: ["dfs__*"], requester },
+    });
+
+    expectSessionTurnHandle(handle, "job-task");
+    const [job, options] = workflowMocks.cronAdd.mock.calls[0] ?? [];
+    expect(job).toMatchObject({
+      owner: { sessionKey: MAIN_SESSION_KEY, accountId: "default" },
+      payload: { kind: "agentTurn", message: "wake", toolsAllow: ["dfs__*"] },
+    });
+    expect(options).toEqual({
+      scheduledToolPolicy: {
+        version: 1,
+        mode: "account",
+        ownerSessionKey: MAIN_SESSION_KEY,
+        ownerAccountId: "default",
+      },
+      toolsAllowProvenance: {
+        version: 1,
+        source: "authenticated-requester",
+        channelRequester: { version: 1, ...requester },
+      },
+    });
+  });
+
+  it("rejects requester-scoped turns without a tool cap or complete requester", async () => {
+    const requester = { channel: "whatsapp", accountId: "default", senderId: "+15550000001" };
+
+    await expect(scheduleWorkflowTurn({ schedule: { requester } })).resolves.toBeUndefined();
+    await expect(
+      scheduleWorkflowTurn({
+        schedule: { toolsAllow: [], requester: { ...requester, senderId: " " } },
+      }),
+    ).resolves.toBeUndefined();
+    expect(workflowMocks.cronAdd).not.toHaveBeenCalled();
+  });
+
+  it("lists only the calling plugin's turns in the requested session", async () => {
+    const otherSession = "agent:main:whatsapp:default:direct:+15550000002";
+    workflowMocks.cronListPage.mockResolvedValue(
+      cronPage([
+        makeCronJob({
+          id: "mine",
+          name: `plugin:${WORKFLOW_PLUGIN_ID}:tag:r1a2b3c4d:${MAIN_SESSION_KEY}:r1a2b3c4d`,
+          schedule: { kind: "cron", expr: "0 10 * * 1", tz: "Asia/Kolkata" },
+          state: { nextRunAtMs: 1_800_000_000_000 },
+        }),
+        taggedJob("other-session", "x", WORKFLOW_PLUGIN_ID, otherSession),
+        taggedJob("other-plugin", "y", "other-plugin"),
+      ]),
+    );
+
+    await expect(
+      listPluginSessionTurns({
+        pluginId: WORKFLOW_PLUGIN_ID,
+        origin: "bundled",
+        cron,
+        request: { sessionKey: MAIN_SESSION_KEY },
+      }),
+    ).resolves.toEqual([
+      {
+        id: "mine",
+        tag: "r1a2b3c4d",
+        message: "wake",
+        schedule: { kind: "cron", expr: "0 10 * * 1", tz: "Asia/Kolkata" },
+        enabled: true,
+        nextRunAtMs: 1_800_000_000_000,
+      },
+    ]);
+    await expect(
+      listPluginSessionTurns({
+        pluginId: WORKFLOW_PLUGIN_ID,
+        origin: "workspace",
+        cron,
+        request: { sessionKey: MAIN_SESSION_KEY },
+      }),
+    ).resolves.toEqual([]);
   });
 });

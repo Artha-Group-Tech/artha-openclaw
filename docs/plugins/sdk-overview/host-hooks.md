@@ -271,6 +271,7 @@ Use the grouped namespaces for new plugin code:
 - `api.session.workflow.sendSessionAttachment(...)`
 - `api.session.workflow.scheduleSessionTurn(...)`
 - `api.session.workflow.unscheduleSessionTurnsByTag(...)`
+- `api.session.workflow.listSessionTurns(...)`
 - `api.session.controls.registerSessionAction(...)`
 - `api.session.controls.registerControlUiDescriptor(...)`
 - `api.agent.events.registerAgentEventSubscription(...)`
@@ -321,6 +322,13 @@ for pending subscription handlers within the host's bounded grace period.
 `scheduleSessionTurn(...)` is a session-scoped convenience over the Gateway
 Cron scheduler. Cron owns timing and run history; the Plugin SDK only constrains
 the target session, plugin-owned naming, and cleanup.
+Pass `keepOnSessionReset: true` for turns that must outlive a session reset; they are
+removed only through `unscheduleSessionTurnsByTag(...)`. `toolsAllow` caps the tools
+the scheduled turn may use, and an empty list runs it without tools.
+With `toolsAllow`, a trusted `requester` (`channel`, `accountId`, `senderId` from the
+tool context) makes the turn run as that non-owner sender, so requester-scoped MCP
+servers use that sender's own connection.
+`listSessionTurns({ sessionKey })` returns the calling plugin's turns for that session.
 
 Within session extensions, `openclaw/plugin-sdk/agent-sessions` provides the host's
 model-selection helpers. Exact provider/model IDs take precedence over case-insensitive

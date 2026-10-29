@@ -81,6 +81,8 @@ export type {
   PluginSessionTurnScheduleParams,
   PluginSessionTurnUnscheduleByTagParams,
   PluginSessionTurnUnscheduleByTagResult,
+  PluginSessionTurnListParams,
+  PluginScheduledSessionTurn,
   PluginSessionExtensionRegistration,
   PluginSessionExtensionProjection,
   PluginToolMetadataRegistration,

@@ -82,6 +82,7 @@ const noops = {
   }),
   scheduleSessionTurn: async () => undefined,
   unscheduleSessionTurnsByTag: async () => ({ removed: 0, failed: 0 }),
+  listSessionTurns: async () => [],
   registerMemoryCapability: () => {},
   registerMemoryPromptSupplement: () => {},
   registerMemoryPromptPreparation: () => {},

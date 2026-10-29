@@ -288,6 +288,16 @@ type PluginSessionTurnScheduleCommonParams = {
   name?: string;
   /** Optional cleanup tag. Reserved cron-name delimiters like `:` are rejected. */
   tag?: string;
+  /** Keep the Cron job when its session is reset or deleted; remove it by tag instead. */
+  keepOnSessionReset?: boolean;
+  /** Tool allowlist for the scheduled turn; an empty list runs it without tools. */
+  toolsAllow?: readonly string[];
+  /**
+   * Trusted chat requester the turn runs as, taken from the tool context, never model input.
+   * Requires `toolsAllow`; the turn runs as a non-owner with this sender's identity so
+   * requester-scoped MCP servers resolve that sender's own connection.
+   */
+  requester?: { channel: string; accountId: string; senderId: string };
 };
 
 export type PluginSessionTurnScheduleParams =
@@ -313,6 +323,23 @@ export type PluginSessionTurnUnscheduleByTagParams = {
 export type PluginSessionTurnUnscheduleByTagResult = {
   removed: number;
   failed: number;
+};
+
+export type PluginSessionTurnListParams = {
+  sessionKey: string;
+};
+
+/** A Cron-backed scheduled session turn owned by the calling plugin. */
+export type PluginScheduledSessionTurn = {
+  id: string;
+  tag?: string;
+  message: string;
+  schedule:
+    | { kind: "at"; at: string }
+    | { kind: "cron"; expr: string; tz?: string }
+    | { kind: "other" };
+  enabled: boolean;
+  nextRunAtMs?: number;
 };
 
 export function normalizePluginHostHookId(value: string | undefined): string {

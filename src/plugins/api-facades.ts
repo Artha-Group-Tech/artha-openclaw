@@ -47,6 +47,7 @@ export function attachPluginApiFacades(api: OpenClawPluginApiWithoutFacades): Op
     sendSessionAttachment,
     scheduleSessionTurn,
     unscheduleSessionTurnsByTag,
+    listSessionTurns,
     steerActiveRun,
     ...retained
   } = api;
@@ -61,6 +62,7 @@ export function attachPluginApiFacades(api: OpenClawPluginApiWithoutFacades): Op
         sendSessionAttachment,
         scheduleSessionTurn,
         unscheduleSessionTurnsByTag,
+        listSessionTurns,
       },
       controls: {
         registerSessionAction,

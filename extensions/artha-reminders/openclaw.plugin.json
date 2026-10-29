@@ -1,0 +1,29 @@
+{
+  "id": "artha-reminders",
+  "name": "Artha Reminders",
+  "description": "Lets each chat user schedule reminders and tasks for themselves only.",
+  "enabledByDefault": false,
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "defaultTimezone": {
+        "type": "string"
+      },
+      "taskToolsAllow": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "contracts": {
+    "tools": [
+      "my_reminders"
+    ]
+  }
+}
