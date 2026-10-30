@@ -360,6 +360,7 @@ export function createCapturedPluginRegistration(params?: {
           };
         },
         unscheduleSessionTurnsByTag: async () => ({ removed: 0, failed: 0 }),
+        listSessionTurns: async () => [],
         registerTool(tool) {
           if (typeof tool !== "function") {
             tools.push(tool);

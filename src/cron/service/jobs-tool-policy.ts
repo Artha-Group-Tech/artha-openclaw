@@ -4,6 +4,7 @@ import {
   resolveCronScheduledToolPolicy,
   type CronScheduledToolPolicy,
 } from "../scheduled-tool-policy.js";
+import { normalizeCronAuthenticatedChannelRequester } from "../tools-allow-provenance.js";
 import { cronJobUsesToolRuntime } from "../tools-allow.js";
 import type {
   CronStoredJob,
@@ -108,6 +109,21 @@ function reconcileToolsAllowProvenance(params: {
   ) {
     params.job.toolsAllowProvenance = structuredClone(params.toolsAllowProvenance);
     return;
+  }
+  // Requester provenance arrives only through trusted add options and is honored only
+  // under the job's account policy (see resolveCronAuthenticatedChannelRequester).
+  if (params.toolsAllowProvenance?.source === "authenticated-requester") {
+    const channelRequester = normalizeCronAuthenticatedChannelRequester(
+      params.toolsAllowProvenance.channelRequester,
+    );
+    if (channelRequester) {
+      params.job.toolsAllowProvenance = {
+        version: 1,
+        source: "authenticated-requester",
+        channelRequester,
+      };
+      return;
+    }
   }
   delete params.job.toolsAllowProvenance;
 }

@@ -346,6 +346,7 @@ export const DEPRECATION_MARKING_COMPAT_RECORDS = [
       "OpenClawPluginApi.sendSessionAttachment",
       "OpenClawPluginApi.scheduleSessionTurn",
       "OpenClawPluginApi.unscheduleSessionTurnsByTag",
+      "OpenClawPluginApi.listSessionTurns",
       "PluginHookContext.senderExternalId",
       "PluginAttachmentChannelHints.telegram",
       "PluginAttachmentChannelHints.slack",

@@ -91,6 +91,7 @@ const noops = {
   }),
   scheduleSessionTurn: async () => undefined,
   unscheduleSessionTurnsByTag: async () => ({ removed: 0, failed: 0 }),
+  listSessionTurns: async () => [],
   registerDetachedTaskRuntime: () => {},
   registerMemoryCapability: () => {},
   registerMemoryPromptSupplement: () => {},
@@ -229,6 +230,7 @@ export function buildPluginApi(params: BuildPluginApiParams): OpenClawPluginApi 
     scheduleSessionTurn: handlers.scheduleSessionTurn ?? noops.scheduleSessionTurn,
     unscheduleSessionTurnsByTag:
       handlers.unscheduleSessionTurnsByTag ?? noops.unscheduleSessionTurnsByTag,
+    listSessionTurns: handlers.listSessionTurns ?? noops.listSessionTurns,
     registerDetachedTaskRuntime:
       handlers.registerDetachedTaskRuntime ?? noops.registerDetachedTaskRuntime,
     registerMemoryCapability: handlers.registerMemoryCapability ?? noops.registerMemoryCapability,

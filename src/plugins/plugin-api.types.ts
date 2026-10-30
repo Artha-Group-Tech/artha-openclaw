@@ -49,6 +49,8 @@ import type {
   PluginSessionTurnScheduleParams,
   PluginSessionTurnUnscheduleByTagParams,
   PluginSessionTurnUnscheduleByTagResult,
+  PluginSessionTurnListParams,
+  PluginScheduledSessionTurn,
   PluginToolMetadataRegistration,
   PluginTrustedToolPolicyRegistration,
 } from "./host-hooks.js";
@@ -131,6 +133,11 @@ type OpenClawPluginSessionWorkflowApi = {
   unscheduleSessionTurnsByTag: (
     params: PluginSessionTurnUnscheduleByTagParams,
   ) => Promise<PluginSessionTurnUnscheduleByTagResult>;
+  /**
+   * List this plugin's Cron-backed scheduled turns for one session.
+   * Bundled plugins only; workspace plugins receive an empty list.
+   */
+  listSessionTurns: (params: PluginSessionTurnListParams) => Promise<PluginScheduledSessionTurn[]>;
 };
 
 type OpenClawPluginSessionControlsApi = {
@@ -437,6 +444,13 @@ export type OpenClawPluginApi = {
   unscheduleSessionTurnsByTag: (
     params: PluginSessionTurnUnscheduleByTagParams,
   ) => Promise<PluginSessionTurnUnscheduleByTagResult>;
+  /**
+   * List this plugin's Cron-backed scheduled turns for one session.
+   * Bundled plugins only; workspace plugins receive an empty list.
+   *
+   * @deprecated Use `api.session.workflow.listSessionTurns(...)`.
+   */
+  listSessionTurns: (params: PluginSessionTurnListParams) => Promise<PluginScheduledSessionTurn[]>;
   /** Register the active detached task runtime for this plugin (exclusive slot). */
   registerDetachedTaskRuntime: (runtime: DetachedTaskLifecycleRuntime) => void;
   /** Register the active memory capability for this memory plugin (exclusive slot). */

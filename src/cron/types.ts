@@ -491,12 +491,27 @@ export type CronJob = CronJobBase<
 };
 
 /** Store-only proof omitted from public Gateway results and the CronJob wire/type contract. */
-export type CronToolsAllowProvenance = {
+/** Chat sender a requester-scoped job runs as; captured from trusted tool context only. */
+export type CronAuthenticatedChannelRequester = {
   version: 1;
-  source: "final-executable-surface";
-  /** Store-private creator origin; missing legacy facts normalize to unknown. */
-  callerOrigin?: CronScheduledToolCallerOrigin;
+  channel: string;
+  accountId: string;
+  senderId: string;
 };
+
+export type CronToolsAllowProvenance =
+  | {
+      version: 1;
+      source: "final-executable-surface";
+      /** Store-private creator origin; missing legacy facts normalize to unknown. */
+      callerOrigin?: CronScheduledToolCallerOrigin;
+    }
+  | {
+      version: 1;
+      source: "authenticated-requester";
+      callerOrigin?: never;
+      channelRequester: CronAuthenticatedChannelRequester;
+    };
 
 /** Persisted row shape; public Gateway and wire contracts use CronJob. */
 export type CronStoredJob = CronJob & {

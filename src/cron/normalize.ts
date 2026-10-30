@@ -13,6 +13,7 @@ import { shouldDefaultCronDeliveryToAnnounce } from "./delivery-defaults.js";
 import { parseDeliveryInput } from "./delivery-field-schemas.js";
 import { normalizeCronCommandArgv, normalizeCronPayload } from "./normalize-payload.js";
 import { snapshotOwnCronRecord } from "./own-record.js";
+import { normalizeCronAuthenticatedChannelRequester } from "./tools-allow-provenance.js";
 import { parseAbsoluteTimeMs } from "./parse.js";
 import { normalizeCronRuntimeAuthority } from "./runtime-authority.js";
 import { coerceFiniteScheduleNumber } from "./schedule-number.js";
@@ -409,6 +410,10 @@ export function normalizeCronJobInput(
     const provenance = isRecord(base.toolsAllowProvenance)
       ? snapshotOwnCronRecord(base.toolsAllowProvenance)
       : undefined;
+    const channelRequester =
+      provenance?.version === 1 && provenance.source === "authenticated-requester"
+        ? normalizeCronAuthenticatedChannelRequester(provenance.channelRequester)
+        : undefined;
     if (
       isRecord(provenance) &&
       provenance.version === 1 &&
@@ -419,6 +424,8 @@ export function normalizeCronJobInput(
         source: "final-executable-surface",
         callerOrigin: normalizeCronScheduledToolCallerOrigin(provenance.callerOrigin),
       };
+    } else if (channelRequester) {
+      next.toolsAllowProvenance = { version: 1, source: "authenticated-requester", channelRequester };
     } else {
       delete next.toolsAllowProvenance;
     }

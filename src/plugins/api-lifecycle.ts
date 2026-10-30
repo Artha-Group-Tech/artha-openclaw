@@ -10,6 +10,7 @@ const LATE_CALLABLE_PLUGIN_API_METHODS: ReadonlySet<string> = new Set<keyof Open
   "scheduleSessionTurn",
   "setRunContext",
   "unscheduleSessionTurnsByTag",
+  "listSessionTurns",
 ]);
 
 /** True when a plugin API method remains callable after registration. */

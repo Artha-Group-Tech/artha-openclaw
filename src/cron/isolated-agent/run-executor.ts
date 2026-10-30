@@ -53,6 +53,7 @@ import {
 import { resolveCronJobConfigRevision } from "../config-revision.js";
 import type { CronRuntimeAuthority } from "../runtime-authority.js";
 import { resolveCronScheduledToolPolicy } from "../scheduled-tool-policy.js";
+import { resolveCronAuthenticatedChannelRequester } from "../tools-allow-provenance.js";
 import type { CronAgentExecutionPhaseUpdate, CronJob, CronStoredJob } from "../types.js";
 import {
   resolveCronChannelOutputPolicy,
@@ -349,6 +350,8 @@ function createCronPromptExecutor(
     callerOrigin: params.job.toolsAllowProvenance?.callerOrigin,
     execTarget: params.job.toolsAllowExecTarget,
   });
+  // Authenticated chat requester captured at creation; scoped to the job's account policy.
+  const channelRequester = resolveCronAuthenticatedChannelRequester(params.job);
   const { sourceDelivery } = params;
   const sourceReplyDeliveryMode = sourceDelivery.sourceReplyDeliveryMode;
   const messageChannel = sourceDelivery.target.channel ?? params.resolvedDelivery.channel;
@@ -794,6 +797,11 @@ function createCronPromptExecutor(
           allowGatewaySubagentBinding: true,
           messageChannel,
           agentAccountId: params.resolvedDelivery.accountId,
+          // A requester-scoped job runs as that non-owner sender, so requester-scoped
+          // MCP servers use the sender's own connection and owner-only tools stay denied.
+          ...(channelRequester
+            ? { senderId: channelRequester.senderId, senderIsOwner: false }
+            : {}),
           messageTo: params.resolvedDelivery.to,
           messageThreadId: params.resolvedDelivery.threadId,
           currentChannelId,

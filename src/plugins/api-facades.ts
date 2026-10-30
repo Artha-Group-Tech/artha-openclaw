@@ -23,6 +23,7 @@ type PluginApiFacadeSource = Pick<
   | "sendSessionAttachment"
   | "setRunContext"
   | "unscheduleSessionTurnsByTag"
+  | "listSessionTurns"
 >;
 
 /** Attaches nested facade namespaces to the flat plugin API implementation. */
@@ -39,6 +40,7 @@ export function attachPluginApiFacades<T extends object>(
       sendSessionAttachment: (...args) => api.sendSessionAttachment(...args),
       scheduleSessionTurn: (...args) => api.scheduleSessionTurn(...args),
       unscheduleSessionTurnsByTag: (...args) => api.unscheduleSessionTurnsByTag(...args),
+      listSessionTurns: (...args) => api.listSessionTurns(...args),
     },
     controls: {
       registerSessionAction: (...args) => api.registerSessionAction(...args),
