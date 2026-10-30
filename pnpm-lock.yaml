@@ -662,6 +662,16 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  extensions/artha-reminders:
+    dependencies:
+      typebox:
+        specifier: 1.3.17
+        version: 1.3.17
+    devDependencies:
+      '@openclaw/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+
   extensions/azure-speech:
     devDependencies:
       '@openclaw/plugin-sdk':
