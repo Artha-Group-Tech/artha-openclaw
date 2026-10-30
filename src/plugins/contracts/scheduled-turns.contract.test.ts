@@ -136,6 +136,31 @@ function makeCronJob(input: Partial<CronJob> & { id: string }): CronJob {
   };
 }
 
+function cronPage(jobs: CronJob[]) {
+  return {
+    jobs,
+    snapshotRevision: "fixture",
+    total: jobs.length,
+    offset: 0,
+    limit: 200,
+    hasMore: false,
+    nextOffset: null,
+  };
+}
+
+function taggedJob(
+  id: string,
+  suffix: string,
+  pluginId = WORKFLOW_PLUGIN_ID,
+  sessionKey = MAIN_SESSION_KEY,
+) {
+  return makeCronJob({
+    id,
+    name: `plugin:${pluginId}:tag:nudge:${sessionKey}:${suffix}`,
+    sessionTarget: `session:${sessionKey}`,
+  });
+}
+
 const cron = createMockCronService();
 
 function mockCronAdd(response: CronJob) {
