@@ -5,9 +5,6 @@ name: Artha image (temporary)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - artha/2026.9.1-office365
 
 permissions:
   contents: read
