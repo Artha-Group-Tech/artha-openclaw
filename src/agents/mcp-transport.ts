@@ -7,6 +7,7 @@
 import type { SSEClientTransportOptions, FetchLike, Transport } from "@modelcontextprotocol/client";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { logDebug } from "../logger.js";
+import { getSessionMcpSourceMessage } from "./agent-bundle-mcp-request-context.js";
 import type { SessionMcpRequesterScope } from "./agent-bundle-mcp-types.js";
 import { withArthaConnectorContext } from "./artha-connector-context.mjs";
 import { withArthaGatewayContext } from "./artha-office365-context.mjs";
@@ -167,6 +168,7 @@ export function resolveMcpTransport(
       identity: resolved.oauth?.identity,
       requesterScope,
       sessionKey: options?.sessionKey,
+      getSourceMessage: getSessionMcpSourceMessage,
     },
   );
   const headers =
