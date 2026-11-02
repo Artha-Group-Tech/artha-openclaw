@@ -7,10 +7,10 @@ on:
   workflow_dispatch:
     inputs:
       upstream_version:
-        description: 'Prepare an upgrade PR for an exact upstream tag (for example v2026.10.5); blank builds the reviewed source'
+        description: "Prepare an upgrade PR for an exact upstream tag (for example v2026.10.5); blank builds the reviewed source"
         required: false
         type: string
-        default: ''
+        default: ""
 permissions:
   contents: read
 concurrency:
@@ -26,30 +26,74 @@ jobs:
     permissions:
       contents: read
       id-token: write
-      attestations: write
     outputs:
       image: ${{ steps.publish.outputs.image }}
       version: ${{ steps.version.outputs.version }}
       commit: ${{ steps.runtime.outputs.commit }}
     steps:
+      # The image is built from runtime.json's source, so only scripts/artha is needed here.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          sparse-checkout: scripts/artha
+          filter: blob:none
       - id: source
         run: python3 scripts/artha/upgrade.py runtime >> "$GITHUB_OUTPUT"
+      - run: python3 -m unittest discover -s scripts/artha -p 'test_*.py' -v
+      - run: node --test scripts/artha/verify-export.test.mjs
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          role-to-assume: ${{ vars.ARTHA_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      # Skip the ARM build when it would reproduce an image that already exists:
+      # a PR that leaves the pinned runtime and this tooling alone, or a main push
+      # whose runtime commit is already published (tagged commit-<sha>).
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          PR: ${{ github.event.pull_request.number }}
+          COMMIT: ${{ steps.source.outputs.ref }}
+        run: |
+          set -euo pipefail
+          build=true
+          if [ "$EVENT" = pull_request ] && [ "$(jq -r .ref scripts/artha/runtime.json)" != self ]; then
+            files=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR/files?per_page=100" | jq -r '.[].filename')
+            # A PR with 100+ files may have more pages; build rather than guess.
+            if [ "$(printf '%s\n' "$files" | wc -l)" -lt 100 ] \
+              && ! printf '%s\n' "$files" | grep -qE '^(scripts/artha/|\.github/workflows/artha-image\.yml$)'; then
+              build=false
+            fi
+          elif [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then
+            CONFIG=$(aws ssm get-parameter --name "$DEPLOYMENT_PARAMETER" --query Parameter.Value --output text)
+            REPOSITORY=$(jq -r .openclaw_repository <<< "$CONFIG")
+            found=$(aws ecr batch-get-image --registry-id "${REPOSITORY%%.*}" --repository-name "${REPOSITORY#*/}" \
+              --image-ids "imageTag=commit-$COMMIT" --query 'length(images)' --output text)
+            if [ "$found" = 1 ]; then
+              build=false
+              printf 'Runtime commit `%s` is already published (tag `commit-%s`); no new release.\n' "$COMMIT" "$COMMIT" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
       - name: Checkout reviewed runtime source
+        if: steps.plan.outputs.build == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ steps.source.outputs.ref }}
           path: runtime-source
           persist-credentials: false
       - id: runtime
+        if: steps.plan.outputs.build == 'true'
         run: echo "commit=$(git -C runtime-source rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - run: node --test runtime-source/src/agents/artha-office365-context.node-test.mjs
-      - run: python3 -m unittest discover -s scripts/artha -p 'test_*.py' -v
-      - run: node --test scripts/artha/verify-export.test.mjs
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - if: steps.plan.outputs.build == 'true'
+        run: node --test runtime-source/src/agents/artha-office365-context.node-test.mjs
+      - if: steps.plan.outputs.build == 'true'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: Build ARM64 runtime without credentials
+        if: steps.plan.outputs.build == 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: ./runtime-source
@@ -63,6 +107,7 @@ jobs:
           cache-from: type=gha,scope=artha-openclaw
           cache-to: type=gha,scope=artha-openclaw,mode=max
       - name: Verify exported package and required signer
+        if: steps.plan.outputs.build == 'true'
         env:
           EXPECTED_VERSION: ${{ steps.source.outputs.version }}
         run: |
@@ -73,14 +118,10 @@ jobs:
             -e 'if (process.platform !== "linux" || process.arch !== "arm64") throw Error("Expected native Linux ARM64 runtime")'
           docker run --rm --network none --entrypoint node artha-openclaw:ci openclaw.mjs --version
       - id: version
+        if: steps.plan.outputs.build == 'true'
         run: echo "version=$(node -p 'require("./runtime-source/package.json").version')" >> "$GITHUB_OUTPUT"
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        with:
-          role-to-assume: ${{ vars.ARTHA_BUILD_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
       - id: publish
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: steps.plan.outputs.build == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           SOURCE_SHA: ${{ steps.runtime.outputs.commit }}
           VERSION: ${{ steps.source.outputs.version }}
@@ -92,6 +133,9 @@ jobs:
           TAG="$SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           docker tag artha-openclaw:ci "$REPOSITORY:$TAG"
           docker push "$REPOSITORY:$TAG"
+          # Lookup tag for the plan step; release IDs stay sha-run-attempt.
+          docker tag artha-openclaw:ci "$REPOSITORY:commit-$SOURCE_SHA"
+          docker push "$REPOSITORY:commit-$SOURCE_SHA"
           DIGEST=$(docker buildx imagetools inspect "$REPOSITORY:$TAG" --format '{{json .Manifest.Digest}}' | jq -r .)
           {
             echo "image=$REPOSITORY@$DIGEST"
@@ -101,12 +145,6 @@ jobs:
           printf '### Published OpenClaw release\n\nRelease ID: `%s`\n\nVersion: `%s`\n\nImage: `%s@%s`\n\nUse this release ID in NemoClaw’s `openclaw_release` input.\n' "$TAG" "$VERSION" "$REPOSITORY" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
           jq -n --arg commit "$SOURCE_SHA" --arg image "$REPOSITORY@$DIGEST" --arg version "$VERSION" --arg release "$TAG" \
             '{commit:$commit,image:$image,version:$version,release:$release,architecture:"arm64"}' > openclaw-release.json
-      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
-        if: steps.publish.outcome == 'success'
-        with:
-          subject-name: ${{ steps.publish.outputs.repository }}
-          subject-digest: ${{ steps.publish.outputs.digest }}
-          push-to-registry: true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: steps.publish.outcome == 'success'
         with:
@@ -115,7 +153,10 @@ jobs:
 
   promote:
     needs: image
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Optional: without the GitHub App, select the release manually in NemoClaw.
+    if: >-
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      && needs.image.outputs.image != '' && vars.ARTHA_PROMOTION_APP_ID != ''
     runs-on: ubuntu-24.04
     concurrency:
       group: artha-openclaw-pin-update
@@ -124,6 +165,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          sparse-checkout: scripts/artha
+          filter: blob:none
       - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
         id: app
         with:

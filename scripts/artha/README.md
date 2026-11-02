@@ -1,6 +1,8 @@
 # Artha OpenClaw image promotion
 
-`.github/workflows/artha-image.yml` builds the ARM64 image and verifies the exported package, runtime CLI and sender-verification markers. Pull-request steps do not assume AWS roles. Main-branch builds publish immutable ECR image tags and build attestations.
+`.github/workflows/artha-image.yml` builds the ARM64 image and verifies the exported package, runtime CLI and sender-verification markers. Pull-request steps do not assume AWS roles. Main-branch builds publish immutable ECR image tags (`sha-run-attempt` plus a `commit-<sha>` lookup tag). GitHub artifact attestations are not used: they need GitHub Enterprise Cloud for private repositories, so provenance rests on the main-only OIDC build role being the only ECR writer.
+
+To save Actions minutes, the ARM build is skipped when it would reproduce an existing image: pull requests that change neither `scripts/artha/` nor this workflow (with a pinned `ref`), and main pushes whose runtime commit already has a `commit-<sha>` tag. Manual runs always build.
 
 `scripts/artha/runtime.json` selects the reviewed runtime source. Its bootstrap
 pin is `1090ebf9619d683e3a667add7de9b40bdde7a694` (`2026.9.1` with the signer).
