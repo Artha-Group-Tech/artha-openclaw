@@ -1,5 +1,8 @@
 import { asOptionalRecord as asRecord } from "@openclaw/normalization-core/record-coerce";
 
+/** Gateway route that receives per-requester MCP OAuth redirects. */
+export const MCP_OAUTH_CALLBACK_PATH = "/oauth/mcp/callback";
+
 export type McpConnectAction = {
   serverName: string;
   authorizationUrl: string;
