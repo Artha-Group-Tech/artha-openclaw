@@ -268,6 +268,7 @@ export function createAgentHarnessHostCapabilities(params: {
     ...(attempt.sessionKey ? { sessionKey: attempt.sessionKey } : {}),
     ...(attempt.sessionId ? { sessionId: attempt.sessionId } : {}),
     runId: attempt.runId,
+    sourceMessageId: attempt.currentMessageId,
     ...buildAgentHookContextChannelFields(attempt),
     ...(Object.keys(requester).length > 0 ? { requester: Object.freeze(requester) } : {}),
     ...(getActiveDiagnosticTraceContext() ? { trace: getActiveDiagnosticTraceContext() } : {}),

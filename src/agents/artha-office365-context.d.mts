@@ -7,5 +7,12 @@ export function withArthaGatewayContext(
     identity?: string;
     requesterScope?: SessionMcpRequesterScope;
     sessionKey?: string;
+    getSourceMessage?: () =>
+      | {
+          sessionKey?: string;
+          messageId: string;
+          requester?: { channel?: string; accountId?: string; senderId?: string };
+        }
+      | undefined;
   },
 ): FetchLike;

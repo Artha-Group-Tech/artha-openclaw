@@ -93,3 +93,43 @@ test("never signs another endpoint and removes forged context", async () => {
   });
   assert.equal(received.headers.has("x-artha-gateway-context"), false);
 });
+
+test("reused transport binds workflow identity to the current host message, never request randomness", async () => {
+  let sourceMessage = {
+    sessionKey: options.sessionKey,
+    messageId: "native-message-1",
+    requester: {
+      channel: "whatsapp",
+      accountId: "default",
+      senderId: requesterScope.requesterSenderId,
+    },
+  };
+  const claims = [];
+  const wrapped = withArthaGatewayContext(
+    async (request) => {
+      claims.push(
+        JSON.parse(
+          Buffer.from(request.headers.get("x-artha-gateway-context").split(".")[0], "base64url"),
+        ),
+      );
+      return new Response();
+    },
+    { ...options, getSourceMessage: () => sourceMessage },
+    deps,
+  );
+  const call = () =>
+    wrapped("https://pitch.artha.vc/mcp", { headers: { Authorization: "Bearer caller" } });
+  await call();
+  await call();
+  assert.match(claims[0].host_action_id, /^msg_[a-f0-9]{64}$/);
+  assert.equal(claims[0].host_action_id, claims[1].host_action_id);
+  assert.notEqual(claims[0].request_id, claims[1].request_id);
+  sourceMessage = { ...sourceMessage, messageId: "native-message-2" };
+  await call();
+  assert.notEqual(claims[0].host_action_id, claims[2].host_action_id);
+  sourceMessage = { ...sourceMessage, sessionKey: "another-session" };
+  await assert.rejects(call, /source message/);
+  sourceMessage = undefined;
+  await call();
+  assert.equal(claims[3].host_action_id, undefined);
+});

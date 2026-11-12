@@ -47,6 +47,8 @@ export type HookContext = {
   /** Ephemeral session UUID — regenerated on /new and /reset. */
   sessionId?: string;
   runId?: string;
+  /** Original host channel message ID, stable across retries of this input. */
+  sourceMessageId?: string | number;
   /** What initiated this run, used to reject approvals on unattended surfaces. */
   trigger?: string;
   /** Device-scoped operator session allowed to review approvals initiated by this run. */
