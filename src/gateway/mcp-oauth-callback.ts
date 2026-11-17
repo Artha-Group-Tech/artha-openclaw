@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { MCP_OAUTH_CALLBACK_PATH } from "../agents/mcp-connect-action.js";
 import { requesterMcpOAuthStoreKeyPrefix } from "../agents/mcp-oauth-identity.js";
 import { readMcpOAuthPendingAuthorization, readMcpOAuthStore } from "../agents/mcp-oauth-store.js";
 import { completeOAuthCallback } from "../agents/mcp-oauth.js";
@@ -8,7 +9,6 @@ import { normalizeConfiguredMcpServers } from "../config/mcp-config-normalize.js
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
 
-const MCP_OAUTH_CALLBACK_PATH = "/oauth/mcp/callback";
 const MCP_OAUTH_CALLBACK_MAX_URL_BYTES = 8 * 1024;
 const CONNECTED_HTML =
   '<!doctype html><html lang="en"><meta charset="utf-8"><title>Account connected</title><body><main><h1>You\'re connected.</h1><p>Return to the chat.</p></main></body></html>';

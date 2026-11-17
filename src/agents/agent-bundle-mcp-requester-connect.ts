@@ -6,6 +6,7 @@ import type {
   RequesterMcpConnect,
   SessionMcpRequesterScope,
 } from "./agent-bundle-mcp-types.js";
+import { MCP_OAUTH_CALLBACK_PATH } from "./mcp-connect-action.js";
 import { requesterMcpOAuthIdentity } from "./mcp-oauth-identity.js";
 import { readMcpOAuthCredentialsStatus, startMcpOAuthAuthorization } from "./mcp-oauth.js";
 import { resolveMcpTransportConfig } from "./mcp-transport-config.js";
@@ -34,7 +35,7 @@ async function connectRequesterOAuthServer(params: {
   const result = await startMcpOAuthAuthorization(
     requesterMcpOAuthIdentity(params.serverName, params.server.url, params.requesterScope),
     params.server,
-    { redirectUrl: new URL("/oauth/mcp/callback", params.publicOrigin).href },
+    { redirectUrl: new URL(MCP_OAUTH_CALLBACK_PATH, params.publicOrigin).href },
   );
   if (result.status === "authorized") {
     return {

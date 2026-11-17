@@ -8,6 +8,7 @@ import {
 } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { TlsOptions } from "node:tls";
+import { MCP_OAUTH_CALLBACK_PATH } from "../agents/mcp-connect-action.js";
 import { isCoreCanvasHostEnabled } from "../canvas/config.js";
 import { isCanvasDocumentHttpPath } from "../canvas/constants.js";
 import { getRuntimeConfig } from "../config/io.js";
@@ -447,7 +448,7 @@ export function createGatewayHttpServer(opts: {
       // and config-gated, so preceding hooks cannot shadow any hook route.
       addAdmittedStage(
         req.method === "GET" &&
-          scopedRequestPath === "/oauth/mcp/callback" &&
+          scopedRequestPath === MCP_OAUTH_CALLBACK_PATH &&
           Boolean(opts.handleMcpOAuthCallbackRequest),
         () => opts.handleMcpOAuthCallbackRequest?.(req, res) ?? false,
       );
